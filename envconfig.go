@@ -118,13 +118,20 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 				info.Key = strings.Join(name, "_")
 			}
 		}
-		if info.Alt != "" {
-			info.Key = info.Alt
-		}
 		if prefix != "" {
 			info.Key = fmt.Sprintf("%s_%s", prefix, info.Key)
 		}
+		// If name is overridden, switch .Key and .Alt and don't forget about prefix.
+		// Now the overridden name is for the first attempt to find value in environment.
+		// The initial name is an alternative name used if the first attempt is not successful.
+		if info.Alt != "" {
+			if prefix != "" {
+				info.Alt = fmt.Sprintf("%s_%s", prefix, info.Alt)
+			}
+			info.Key, info.Alt = info.Alt, info.Key
+		}
 		info.Key = strings.ToUpper(info.Key)
+		info.Alt = strings.ToUpper(info.Alt)
 		infos = append(infos, info)
 
 		if f.Kind() == reflect.Struct {
