@@ -58,7 +58,7 @@ type varInfo struct {
 }
 
 // GatherInfo gathers information about the specified struct
-func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
+func gatherInfo(prefix string, spec interface{}, alt bool) ([]varInfo, error) {
 	s := reflect.ValueOf(spec)
 
 	if s.Kind() != reflect.Ptr {
@@ -71,7 +71,11 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 	typeOfSpec := s.Type()
 
 	// over allocate an info array, we will extend if needed later
-	infos := make([]varInfo, 0, s.NumField())
+	allocCount := 0
+	if !alt {
+		allocCount = s.NumField()
+	}
+	infos := make([]varInfo, 0, allocCount)
 	for i := 0; i < s.NumField(); i++ {
 		f := s.Field(i)
 		ftype := typeOfSpec.Field(i)
@@ -91,12 +95,17 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 			f = f.Elem()
 		}
 
+		tagEnvConfig := ftype.Tag.Get("envconfig")
+		if alt && tagEnvConfig == "" {
+			continue
+		}
+
 		// Capture information about the config variable
 		info := varInfo{
 			Name:  ftype.Name,
 			Field: f,
 			Tags:  ftype.Tag,
-			Alt:   strings.ToUpper(ftype.Tag.Get("envconfig")),
+			Alt:   strings.ToUpper(tagEnvConfig),
 		}
 
 		// Default to the field name as the env var name (will be upcased)
@@ -157,7 +166,7 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 				}
 
 				embeddedPtr := f.Addr().Interface()
-				embeddedInfos, err := gatherInfo(innerPrefix, embeddedPtr)
+				embeddedInfos, err := gatherInfo(innerPrefix, embeddedPtr, alt)
 				if err != nil {
 					return nil, err
 				}
@@ -174,7 +183,7 @@ func gatherInfo(prefix string, spec interface{}) ([]varInfo, error) {
 // that we don't know how or want to parse. This is likely only meaningful with
 // a non-empty prefix.
 func CheckDisallowed(prefix string, spec interface{}) error {
-	infos, err := gatherInfo(prefix, spec)
+	infos, err := gatherInfo(prefix, spec, false)
 	if err != nil {
 		return err
 	}
@@ -203,7 +212,16 @@ func CheckDisallowed(prefix string, spec interface{}) error {
 
 // Process populates the specified struct based on environment variables
 func Process(prefix string, spec interface{}) error {
-	infos, err := gatherInfo(prefix, spec)
+	return process(prefix, spec, false)
+}
+
+// ProcessAlt is the same as Process but skips fields without envconfig tag
+func ProcessAlt(prefix string, spec interface{}) error {
+	return process(prefix, spec, true)
+}
+
+func process(prefix string, spec interface{}, alt bool) error {
+	infos, err := gatherInfo(prefix, spec, alt)
 
 	for _, info := range infos {
 
@@ -248,6 +266,13 @@ func Process(prefix string, spec interface{}) error {
 // MustProcess is the same as Process but panics if an error occurs
 func MustProcess(prefix string, spec interface{}) {
 	if err := Process(prefix, spec); err != nil {
+		panic(err)
+	}
+}
+
+// MustProcessAlt is the same as ProcessAlt but panics if an error occurs
+func MustProcessAlt(prefix string, spec interface{}) {
+	if err := ProcessAlt(prefix, spec); err != nil {
 		panic(err)
 	}
 }
